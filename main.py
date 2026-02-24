@@ -9,9 +9,9 @@ SYMBOL = "PLTR"
 tf.keras.config.enable_unsafe_deserialization() #Esto solo lo hare cuando yo mismo saque mis datos
 
 #Funcion para niveles
-def get_daily_levels(symbol):
+def get_extended_levels(symbol):
     #Descargue de 5 dias para evitar fines de semanas
-    daily = yf.download(symbol, period="5d", interval="1d", progress=False)
+    daily = yf.download(symbol, period="10d", interval="1d", progress=False)
 
     #Limpieza multiIndex
     if isinstance(daily.columns, pd.MultiIndex):
@@ -20,15 +20,18 @@ def get_daily_levels(symbol):
     #Eliminanos posibles filas vacias ( Fines de semanas y feriados donde el mercado no abre)
     daily = daily.dropna()
 
-    ayer = daily.iloc[-2]
-    hoy = daily.iloc[-1]
-
-    return {
-        "ayer_max": float(ayer['High']),
-        "ayer_min": float(ayer['Low']),
-        "hoy_max": float(hoy['High']),
-        "hoy_min": float(hoy['Low']),
+    #Creacion de mapa de niveles
+    levels = {
+        "ayer_max": float(daily['High'].iloc[-2]),
+        "ayer_min": float(daily['Low'].iloc[-2]),
+        "antier_max": float(daily['High'].iloc[-3]),
+        "antier_min": float(daily['Low'].iloc[-3]),
+        "hoy_max": float(daily['High'].iloc[-1]),
+        "hoy_min": float(daily['Low'].iloc[-1])
     }
+
+    return levels
+
 
 #Funcion para calcular RSI
 def calculate_rsi(series, period=14):
@@ -44,7 +47,7 @@ processor = DataProcessor(window_size=60)
 processor.load_scaler("models/scaler_pltr_5m.bin") #Esto se cambia con nuevos modelos
 
 # 1.1 Obtener niveles historicos
-niveles = get_daily_levels(SYMBOL)
+niveles = get_extended_levels(SYMBOL)
 
 # 2. Loop de mercado
 raw_data = yf.download(SYMBOL, period="30d", interval="5m", progress=False)
@@ -69,32 +72,54 @@ svj_results = SVJModel.calculate(raw_data)
 raw_data['RSI'] = calculate_rsi(raw_data['Close'])
 rsi_actual = float(raw_data['RSI'].iloc[-1])
 
-#Reporte con niveles
+
+# Obtenemos el máximo y mínimo alcanzado HOY (desde la apertura)
+max_hoy_real = raw_data['High'].tail(100).max() # Ajustado a la sesión actual
+min_hoy_real = raw_data['Low'].tail(100).min()
+
+ya_toco_min_ayer = min_hoy_real <= niveles['ayer_min']
+ya_toco_max_ayer = max_hoy_real >= niveles['ayer_max']
+
+# --- REPORTE LIMPIO  ---
 print(f"\n" + "="*40)
 print(f"ANÁLISIS EN VIVO PARA: {SYMBOL}")
 print(f"Precio Actual: ${precio_actual:.2f}")
 print("-" * 40)
 
-# Alertas de niveles de hoy
-if precio_actual >= niveles['hoy_max'] * 0.999:
-    print(f"📈 Testeando el MÁXIMO DE HOY (${niveles['hoy_max']:.2f})")
-
-#Bloque del RSI
-print(f"RSI (Fuerza): {rsi_actual:.1f}")
-if rsi_actual > 70:
-    print("⚠️ SOBRECOMPRADO: El precio podría retroceder antes de seguir subiendo.")
-elif rsi_actual < 30:
-    print("📉 SOBREVENDIDO: Oportunidad de rebote al alza.")
+# 1. Definición dinámica de objetivos
+if precio_actual <= niveles['ayer_min']:
+    # Estamos por debajo o en el mínimo de ayer -> Miramos hacia abajo (Antier) o rebote
+    objetivo_baja = niveles['antier_min']
+    objetivo_alta = niveles['ayer_min'] # El soporte roto ahora es resistencia
+    status_contexto = "📉 Mínimo de ayer perforado."
 else:
-    print("✅ RSI Neutral: Hay espacio para moverse.")
+    # Estamos dentro del rango -> Los objetivos son los de ayer
+    objetivo_baja = niveles['ayer_min']
+    objetivo_alta = niveles['ayer_max']
+    status_contexto = "⚖️ Cotizando en rango de ayer."
 
-print("-" * 40)
-print(f"DL -> Prob. buscar Máximo de ayer: {prob_tocar_max:.1f}%")
-print(f"DL -> Prob. buscar Mínimo de ayer: {prob_tocar_min:.1f}%")
+print(f"Estatus: {status_contexto}")
+
+# 2. Lógica de Predicción del DL (Sin ruido)
+print(f"Confianza: Máx {prob_tocar_max:.1f}% | Mín {prob_tocar_min:.1f}%")
+
+# Elegimos qué imprimir basándonos en la probabilidad predominante y el precio actual
 if prob_tocar_max > prob_tocar_min:
-    print(f"🎯 OBJETIVO: El modelo cree que irá por el MÁXIMO (${niveles['ayer_max']:.2f})")
+    direccion = "ALCISTA" if objetivo_alta > precio_actual else "RECUPERACIÓN"
+    print(f"🎯 OBJETIVO {direccion}: ${objetivo_alta:.2f}")
 else:
-    print(f"🎯 OBJETIVO: El modelo cree que irá por el MÍNIMO (${niveles['ayer_min']:.2f})")
-print(f"SVJ -> P(Subida): {svj_results['p_up']:.1f}% | SCI: {svj_results['sci']:.1f}%")
+    # Si ya tocamos el mínimo de ayer, el próximo mínimo es el de antier
+    target_final = objetivo_baja if ya_toco_min_ayer else niveles['ayer_min']
+    direccion = "BAJISTA" if target_final < precio_actual else "LATERAL"
+    print(f"🎯 OBJETIVO {direccion}: ${target_final:.2f}")
+
+# 3. Bloque de indicadores
+print("-" * 40)
+print(f"RSI: {rsi_actual:.1f} | SCI: {svj_results['sci']:.1f}%")
+
+if rsi_actual > 70: print("⚠️ SOBRECOMPRADO")
+elif rsi_actual < 30: print("📉 SOBREVENDIDO")
+
+print(f"SVJ P(Subida): {svj_results['p_up']:.1f}%")
 print(f"DEBUG: {svj_results['debug']}")
 print("="*40)
