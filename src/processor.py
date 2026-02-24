@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import RobustScaler
+import joblib
 
 
 class DataProcessor:
@@ -8,6 +9,12 @@ class DataProcessor:
         self.window_size = window_size
         self.horizon = horizon
         self.scaler = RobustScaler()
+
+    def save_scaler(self, path):
+        joblib.dump(self.scaler, path)
+
+    def load_scaler(self, path):
+        self.scaler = joblib.load(path)
 
     def prepare_features(self, df):
         # 1. Niveles del día anterior

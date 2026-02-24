@@ -10,6 +10,10 @@ raw_data = yf.download("PLTR", period="2y", interval="1h") # Recomendado 1h o 15
 processor = DataProcessor(window_size=60, horizon=20)
 X, y = processor.create_dataset(raw_data)
 
+# 2.1 Guardado de "procesador"
+processor.save_scaler("models/scaler_pltr.bin")
+print("Escalador guardado.")
+
 # 3. Dividir y Entrenar
 split = int(len(X) * 0.8)
 X_train, X_test = X[:split], X[split:]
