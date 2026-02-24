@@ -14,7 +14,7 @@ processor = DataProcessor(window_size=60)
 processor.load_scaler("models/scaler_pltr.bin")
 
 # 2. Loop de mercado
-raw_data = yf.download("PLTR", period="5d", interval="1m")
+raw_data = yf.download("PLTR", period="7d", interval="1m")
 
 # Predicción A: Deep Learning (Eventos)
 X_live, _ = processor.create_dataset(raw_data, training=False)
@@ -25,3 +25,4 @@ svj_results = SVJModel.calculate(raw_data)
 
 print(f"DL -> Tocar Max: {dl_probs[0]*100:.1f}%")
 print(f"SVJ -> P(Subida): {svj_results['p_up']:.1f}% | SCI: {svj_results['sci']:.1f}%")
+print(svj_results['debug'])
