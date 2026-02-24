@@ -1,125 +1,126 @@
 import yfinance as yf
 import tensorflow as tf
 import pandas as pd
+import numpy as np
 from src.processor import DataProcessor
 from src.brain_svj import SVJModel
 
-#Configuracion inicial
+# Configuración inicial
 SYMBOL = "PLTR"
-tf.keras.config.enable_unsafe_deserialization() #Esto solo lo hare cuando yo mismo saque mis datos
+tf.keras.config.enable_unsafe_deserialization()
 
-#Funcion para niveles
+
+# --- FUNCIONES DE NIVELES ---
 def get_extended_levels(symbol):
-    #Descargue de 5 dias para evitar fines de semanas
     daily = yf.download(symbol, period="10d", interval="1d", progress=False)
-
-    #Limpieza multiIndex
     if isinstance(daily.columns, pd.MultiIndex):
         daily.columns = daily.columns.get_level_values(0)
-
-    #Eliminanos posibles filas vacias ( Fines de semanas y feriados donde el mercado no abre)
     daily = daily.dropna()
-
-    #Creacion de mapa de niveles
-    levels = {
-        "ayer_max": float(daily['High'].iloc[-2]),
+    return {
         "ayer_min": float(daily['Low'].iloc[-2]),
-        "antier_max": float(daily['High'].iloc[-3]),
-        "antier_min": float(daily['Low'].iloc[-3]),
-        "hoy_max": float(daily['High'].iloc[-1]),
-        "hoy_min": float(daily['Low'].iloc[-1])
+        "antier_min": float(daily['Low'].iloc[-3])
     }
 
-    return levels
+
+def get_historical_major_levels(symbol, precio_actual):
+    hist = yf.download(symbol, period="2y", interval="1d", progress=False)
+    if isinstance(hist.columns, pd.MultiIndex):
+        hist.columns = hist.columns.get_level_values(0)
+    hist = hist.dropna()
+
+    valles = hist['Low'][hist['Low'] == hist['Low'].rolling(window=5, center=True).min()].tolist()
+    picos = hist['High'][hist['High'] == hist['High'].rolling(window=5, center=True).max()].tolist()
+
+    # Soportes: de más cerca a más lejos (descendente)
+    soportes = sorted(list(set([round(s, 2) for s in valles if s < precio_actual * 0.999])), reverse=True)
+    # Resistencias: de más cerca a más lejos (ascendente)
+    resistencias = sorted(list(set([round(r, 2) for r in picos if r > precio_actual * 1.001])))
+
+    return {
+        "soportes_h": soportes[:3],  # Los 3 niveles históricos más bajos
+        "resistencia_h": resistencias[0] if resistencias else precio_actual * 1.05
+    }
 
 
-#Funcion para calcular RSI
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
+
 # 1. Cargar lo necesario
-dl_model = tf.keras.models.load_model("models/cnn_lstm_5m_v1.keras") #Esto se cambio con nuevos modelos
+dl_model = tf.keras.models.load_model("models/cnn_lstm_5m_v1.keras")
 processor = DataProcessor(window_size=60)
-processor.load_scaler("models/scaler_pltr_5m.bin") #Esto se cambia con nuevos modelos
+processor.load_scaler("models/scaler_pltr_5m.bin")
 
-# 1.1 Obtener niveles historicos
-niveles = get_extended_levels(SYMBOL)
-
-# 2. Loop de mercado
+# 2. Obtener Datos
 raw_data = yf.download(SYMBOL, period="30d", interval="5m", progress=False)
-
-#Limpieza de columnas
 if isinstance(raw_data.columns, pd.MultiIndex):
     raw_data.columns = raw_data.columns.get_level_values(0)
 
 precio_actual = float(raw_data['Close'].iloc[-1])
+min_hoy_real = raw_data['Low'].tail(100).min()
 
-# Predicción A: Deep Learning (Eventos)
+# 2.1 Obtener niveles
+niveles_c = get_extended_levels(SYMBOL)
+niveles_h = get_historical_major_levels(SYMBOL, precio_actual)
+
+# 3. Predicciones
 X_live, _ = processor.create_dataset(raw_data, training=False)
 dl_probs = dl_model.predict(X_live[-1:], verbose=0)[0]
-
-prob_tocar_max = dl_probs[0]*100
-prob_tocar_min = dl_probs[1]*100
-
-# Predicción B: Matemática (Tendencia/Riesgo)
+p_subida, p_bajada = dl_probs[0] * 100, dl_probs[1] * 100
 svj_results = SVJModel.calculate(raw_data)
-
-#Calculos de RSI
 raw_data['RSI'] = calculate_rsi(raw_data['Close'])
 rsi_actual = float(raw_data['RSI'].iloc[-1])
 
-
-# Obtenemos el máximo y mínimo alcanzado HOY (desde la apertura)
-max_hoy_real = raw_data['High'].tail(100).max() # Ajustado a la sesión actual
-min_hoy_real = raw_data['Low'].tail(100).min()
-
-ya_toco_min_ayer = min_hoy_real <= niveles['ayer_min']
-ya_toco_max_ayer = max_hoy_real >= niveles['ayer_max']
-
-# --- REPORTE LIMPIO  ---
-print(f"\n" + "="*40)
-print(f"ANÁLISIS EN VIVO PARA: {SYMBOL}")
-print(f"Precio Actual: ${precio_actual:.2f}")
+# --- REPORTE RADAR 360° ---
+print(f"\n" + "=" * 40)
+print(f"RADAR DE OBJETIVOS: {SYMBOL} | Precio: ${precio_actual:.2f}")
 print("-" * 40)
 
-# 1. Definición dinámica de objetivos
-if precio_actual <= niveles['ayer_min']:
-    # Estamos por debajo o en el mínimo de ayer -> Miramos hacia abajo (Antier) o rebote
-    objetivo_baja = niveles['antier_min']
-    objetivo_alta = niveles['ayer_min'] # El soporte roto ahora es resistencia
-    status_contexto = "📉 Mínimo de ayer perforado."
-else:
-    # Estamos dentro del rango -> Los objetivos son los de ayer
-    objetivo_baja = niveles['ayer_min']
-    objetivo_alta = niveles['ayer_max']
-    status_contexto = "⚖️ Cotizando en rango de ayer."
+# Sección Superior
+res_actual = niveles_h['resistencia_h']
+print(f"🔼 TECHO (Resistencia): ${res_actual:.2f} | Prob: {p_subida:.1f}%")
+print("-" * 20)
 
-print(f"Estatus: {status_contexto}")
+# Consolidar Soportes para el Radar
+raw_levels = [
+    {"nombre": "AYER", "precio": niveles_c['ayer_min']},
+    {"nombre": "ANTIER", "precio": niveles_c['antier_min']}
+]
+for i, s_h in enumerate(niveles_h['soportes_h']):
+    raw_levels.append({"nombre": f"HISTORICO {i + 1}", "precio": s_h})
 
-# 2. Lógica de Predicción del DL (Sin ruido)
-print(f"Confianza: Máx {prob_tocar_max:.1f}% | Mín {prob_tocar_min:.1f}%")
+# Ordenar por cercanía (descendente) y eliminar duplicados de precio
+lista_soportes = sorted({v['precio']: v for v in raw_levels}.values(), key=lambda x: x['precio'], reverse=True)
 
-# Elegimos qué imprimir basándonos en la probabilidad predominante y el precio actual
-if prob_tocar_max > prob_tocar_min:
-    direccion = "ALCISTA" if objetivo_alta > precio_actual else "RECUPERACIÓN"
-    print(f"🎯 OBJETIVO {direccion}: ${objetivo_alta:.2f}")
-else:
-    # Si ya tocamos el mínimo de ayer, el próximo mínimo es el de antier
-    target_final = objetivo_baja if ya_toco_min_ayer else niveles['ayer_min']
-    direccion = "BAJISTA" if target_final < precio_actual else "LATERAL"
-    print(f"🎯 OBJETIVO {direccion}: ${target_final:.2f}")
+objetivo_pendiente = None
+precio_objetivo = None
 
-# 3. Bloque de indicadores
+for sop in lista_soportes:
+    tocado = min_hoy_real <= sop['precio']
+    status = "✅ TOCADO" if tocado else "⏳ PENDIENTE"
+
+    # Probabilidad lógica: si está en tendencia bajista, los niveles pendientes tienen la prob. alta
+    prob_nivel = p_bajada if not tocado else p_bajada * 0.8
+
+    print(f"🔽 SOPORTE {sop['nombre']}: ${sop['precio']:.2f} | {status} | Prob: {prob_nivel:.1f}%")
+
+    if not tocado and objetivo_pendiente is None:
+        objetivo_pendiente = sop['nombre']
+        precio_objetivo = sop['precio']
+
+# 5. Conclusión Dinámica
 print("-" * 40)
+if p_bajada > p_subida:
+    if precio_objetivo:
+        print(f"🎯 PRÓXIMO OBJETIVO BAJISTA: ${precio_objetivo:.2f} ({objetivo_pendiente})")
+    else:
+        print(f"🎯 PRÓXIMO OBJETIVO BAJISTA: ${precio_actual * 0.98:.2f} (Soporte Dinámico)")
+else:
+    print(f"🎯 PRÓXIMO OBJETIVO ALCISTA: ${res_actual:.2f}")
+
 print(f"RSI: {rsi_actual:.1f} | SCI: {svj_results['sci']:.1f}%")
-
-if rsi_actual > 70: print("⚠️ SOBRECOMPRADO")
-elif rsi_actual < 30: print("📉 SOBREVENDIDO")
-
-print(f"SVJ P(Subida): {svj_results['p_up']:.1f}%")
-print(f"DEBUG: {svj_results['debug']}")
-print("="*40)
+print("=" * 40)
