@@ -11,22 +11,23 @@ tf.keras.config.enable_unsafe_deserialization() #Esto solo lo hare cuando yo mis
 #Funcion para niveles
 def get_daily_levels(symbol):
     #Descargamos los ultimo 2 dias en velas diarias para ver el ayer
-    daily = yf.download(symbol, period="2d", interval="1d", progress=False)
+    daily = yf.download(symbol, period="3d", interval="1d", progress=False)
 
     #Limpieza multiIndex
     if isinstance(daily.columns, pd.MultiIndex):
         daily.columns = daily.columns.get_level_values(0)
 
     #Eliminanos posibles filas vacias ( Fines de semanas y feriados donde el mercado no abre)
-    daily = daily.
+    daily = daily.dropna()
+
     if len(daily) < 2: return None
 
     #Ayer es la fila 0, Hoy es la fila 1
     levels = {
-        "ayer_max": float(daily['High'].iloc[0]),
-        "ayer_min": float(daily['Low'].iloc[0]),
-        "hoy_max": float(daily['High'].iloc[1]),
-        "hoy_min": float(daily['Low'].iloc[1]),
+        "ayer_max": float(daily['High'].iloc[-2]),
+        "ayer_min": float(daily['Low'].iloc[-2]),
+        "hoy_max": float(daily['High'].iloc[-1]),
+        "hoy_min": float(daily['Low'].iloc[-1]),
     }
     return levels
 
@@ -39,7 +40,12 @@ processor.load_scaler("models/scaler_pltr.bin")
 niveles = get_daily_levels(SYMBOL)
 
 # 2. Loop de mercado
-raw_data = yf.download(SYMBOL, period="7d", interval="1m")
+raw_data = yf.download(SYMBOL, period="7d", interval="1m", progress=False)
+
+#Limpieza de columnas
+if isinstance(raw_data.columns, pd.MultiIndex):
+    raw_data.columns = raw_data.columns.get_level_values(0)
+
 precio_actual = float(raw_data['Close'].iloc[-1])
 
 # Predicción A: Deep Learning (Eventos)
