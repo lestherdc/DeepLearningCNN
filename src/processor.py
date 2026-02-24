@@ -30,6 +30,13 @@ class DataProcessor:
 
         df['Date'] = df.index.date
 
+        # Cálculo de Volumen Direccional
+        # Si el cierre es mayor que el anterior, el volumen es "positivo"
+        df['vol_dir'] = np.where(df['Close'] > df['Close'].shift(1), df['Volume'], -df['Volume'])
+
+        # Media móvil del volumen direccional (acumulado de 10 velas)
+        df['vol_force'] = df['vol_dir'].rolling(window=10).sum()
+
         # Ahora sí encontrará 'High' y 'Low' sin problema
         daily = df.groupby('Date').agg({'High': 'max', 'Low': 'min'}).shift(1)
         df = df.join(daily, on='Date', rsuffix='_prev')

@@ -10,8 +10,8 @@ tf.keras.config.enable_unsafe_deserialization() #Esto solo lo hare cuando yo mis
 
 #Funcion para niveles
 def get_daily_levels(symbol):
-    #Descargamos los ultimo 2 dias en velas diarias para ver el ayer
-    daily = yf.download(symbol, period="3d", interval="1d", progress=False)
+    #Descargue de 5 dias para evitar fines de semanas
+    daily = yf.download(symbol, period="5d", interval="1d", progress=False)
 
     #Limpieza multiIndex
     if isinstance(daily.columns, pd.MultiIndex):
@@ -20,16 +20,15 @@ def get_daily_levels(symbol):
     #Eliminanos posibles filas vacias ( Fines de semanas y feriados donde el mercado no abre)
     daily = daily.dropna()
 
-    if len(daily) < 2: return None
+    ayer = daily.iloc[-2]
+    hoy = daily.iloc[-1]
 
-    #Ayer es la fila 0, Hoy es la fila 1
-    levels = {
-        "ayer_max": float(daily['High'].iloc[-2]),
-        "ayer_min": float(daily['Low'].iloc[-2]),
-        "hoy_max": float(daily['High'].iloc[-1]),
-        "hoy_min": float(daily['Low'].iloc[-1]),
+    return {
+        "ayer_max": float(ayer['High']),
+        "ayer_min": float(ayer['Low']),
+        "hoy_max": float(hoy['High']),
+        "hoy_min": float(hoy['Low']),
     }
-    return levels
 
 #Funcion para calcular RSI
 def calculate_rsi(series, period=14):
@@ -60,6 +59,9 @@ precio_actual = float(raw_data['Close'].iloc[-1])
 X_live, _ = processor.create_dataset(raw_data, training=False)
 dl_probs = dl_model.predict(X_live[-1:], verbose=0)[0]
 
+prob_tocar_max = dl_probs[0]*100
+prob_tocar_min = dl_probs[1]*100
+
 # Predicción B: Matemática (Tendencia/Riesgo)
 svj_results = SVJModel.calculate(raw_data)
 
@@ -72,15 +74,6 @@ print(f"\n" + "="*40)
 print(f"ANÁLISIS EN VIVO PARA: {SYMBOL}")
 print(f"Precio Actual: ${precio_actual:.2f}")
 print("-" * 40)
-
-# Alertas de niveles de ayer
-if precio_actual >= niveles['ayer_max']:
-    print(f"⚠️ ALERTA: Por encima del MÁXIMO DE AYER (${niveles['ayer_max']:.2f})")
-elif precio_actual <= niveles['ayer_min']:
-    print(f"⚠️ ALERTA: Por debajo del MÍNIMO DE AYER (${niveles['ayer_min']:.2f})")
-else:
-    distancia_max = niveles['ayer_max'] - precio_actual
-    print(f"Info: El máximo de ayer está a ${distancia_max:.2f} de distancia.")
 
 # Alertas de niveles de hoy
 if precio_actual >= niveles['hoy_max'] * 0.999:
@@ -96,7 +89,12 @@ else:
     print("✅ RSI Neutral: Hay espacio para moverse.")
 
 print("-" * 40)
-print(f"DL -> Tocar Max: {dl_probs[0]*100:.1f}%")
+print(f"DL -> Prob. buscar Máximo de ayer: {prob_tocar_max:.1f}%")
+print(f"DL -> Prob. buscar Mínimo de ayer: {prob_tocar_min:.1f}%")
+if prob_tocar_max > prob_tocar_min:
+    print(f"🎯 OBJETIVO: El modelo cree que irá por el MÁXIMO (${niveles['ayer_max']:.2f})")
+else:
+    print(f"🎯 OBJETIVO: El modelo cree que irá por el MÍNIMO (${niveles['ayer_min']:.2f})")
 print(f"SVJ -> P(Subida): {svj_results['p_up']:.1f}% | SCI: {svj_results['sci']:.1f}%")
 print(f"DEBUG: {svj_results['debug']}")
 print("="*40)
