@@ -5,12 +5,12 @@ from src.processor import DataProcessor
 from src.brain_svj import SVJModel
 
 # Configuración inicial
-SYMBOL = "PLTR"
+SYMBOL = "AAPL"
 tf.keras.config.enable_unsafe_deserialization()
 
 #Rutas automatizadas
 MODEL_PATH = f"models/{SYMBOL}/model.keras"
-SCALER_PATH = f"models/{SYMBOL}/scaler.keras"
+SCALER_PATH = f"models/{SYMBOL}/scaler.bin"
 
 # --- FUNCIONES DE NIVELES ---
 def get_extended_levels(symbol):
