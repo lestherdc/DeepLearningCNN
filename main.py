@@ -1,7 +1,6 @@
 import yfinance as yf
 import tensorflow as tf
 import pandas as pd
-import numpy as np
 from src.processor import DataProcessor
 from src.brain_svj import SVJModel
 
@@ -9,6 +8,9 @@ from src.brain_svj import SVJModel
 SYMBOL = "PLTR"
 tf.keras.config.enable_unsafe_deserialization()
 
+#Rutas automatizadas
+MODEL_PATH = f"models/{SYMBOL}/model.keras"
+SCALER_PATH = f"models/{SYMBOL}/scaler.keras"
 
 # --- FUNCIONES DE NIVELES ---
 def get_extended_levels(symbol):
@@ -51,9 +53,9 @@ def calculate_rsi(series, period=14):
 
 
 # 1. Cargar lo necesario
-dl_model = tf.keras.models.load_model("models/cnn_lstm_5m_v1.keras")
+dl_model = tf.keras.models.load_model(MODEL_PATH)
 processor = DataProcessor(window_size=60)
-processor.load_scaler("models/scaler_pltr_5m.bin")
+processor.load_scaler(SCALER_PATH)
 
 # 2. Obtener Datos
 raw_data = yf.download(SYMBOL, period="30d", interval="5m", progress=False)

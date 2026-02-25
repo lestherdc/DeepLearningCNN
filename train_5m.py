@@ -1,5 +1,4 @@
 import yfinance as yf
-import tensorflow as tf
 from src.processor import DataProcessor
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Conv1D, MaxPooling1D, Flatten
