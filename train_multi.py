@@ -5,7 +5,7 @@ from src.processor import DataProcessor
 import tensorflow as tf
 
 # ---- COnfiguracion -----
-ACCIONES = ["PLTR", "TSLA", "AAPL"]
+ACCIONES = ["PLTR", "TSLA", "AAPL", "AVGO"]
 DIAS_HISTORIA = "60d"
 INTERVALO = "5m"
 WINDOW_SIZE = 60
