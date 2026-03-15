@@ -60,3 +60,28 @@ if os.path.exists(MODEL_PATH):
 
 else:
     st.error(f"No se encontró el modelo para {symbol}. Por favor, entrena el modelo primero.")
+
+# ... (código anterior)
+
+# Descarga de datos
+raw_data = yf.download(symbol, period="20d", interval="5m", progress=False)
+
+# 1. Validar si el DataFrame está vacío
+if raw_data.empty:
+    st.error(f"No se pudieron obtener datos para {symbol}. Verifica el símbolo o intenta más tarde.")
+else:
+    # 2. Limpiar MultiIndex si es necesario
+    if isinstance(raw_data.columns, pd.MultiIndex):
+        raw_data.columns = raw_data.columns.get_level_values(0)
+
+    # 3. Eliminar valores nulos
+    raw_data = raw_data.dropna()
+
+    # 4. Verificar de nuevo tras la limpieza
+    if len(raw_data) > 0:
+        precio_actual = float(raw_data['Close'].iloc[-1])
+
+        # --- Continuar con el resto de la lógica ---
+        st.metric("Precio Actual", f"${precio_actual:.2f}")
+    else:
+        st.warning("El mercado podría estar cerrado o no hay suficientes velas de 5m.")
