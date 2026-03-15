@@ -89,28 +89,55 @@ else:
 
 # --- FUNCIÓN DE NIVELES (Asegúrate de que esté definida o importada) ---
 def get_total_vision_levels(symbol, precio_actual, daily):
-    # --- 1. SIEMPRE INICIALIZAR PRIMERO ---
+    """
+    Obtiene objetivos reales filtrando por testeo histórico (Visión 6 meses).
+    Optimizado para evitar NameError e IndexError en Streamlit.
+    """
+    # 1. SIEMPRE inicializar las variables al principio
     soportes = []
     resistencias = []
     etiquetas = {}
 
-    # Validar que daily tenga datos para evitar que los bucles se salten
-    if daily.empty:
+    # Validar que el DataFrame diario tenga información
+    if daily is None or daily.empty:
         return soportes, resistencias, etiquetas
 
-    # 2. Tu lógica de búsqueda (Asegúrate de que 'max_hoy' y 'min_hoy' estén definidos)
-    # Ejemplo de estructura de búsqueda:
+    # 2. Definir el rango del día actual para saber qué niveles ya fueron "tocados"
+    # Buscamos el máximo y mínimo de las últimas velas de hoy
+    max_hoy = precio_actual
+    min_hoy = precio_actual
+
+    # 3. Lógica de escaneo histórico
     for i in range(1, len(daily)):
         idx = -(i + 1)
-        # ... (tu lógica de detección de niveles vírgenes) ...
-        # d_high = round(float(daily['High'].iloc[idx]), 2)
-        # if d_high > precio_actual:
-        #     resistencias.append(d_high)
-        #     etiquetas[d_high] = "Máximo histórico"
+        # Evitar salirnos del índice
+        if abs(idx) >= len(daily):
+            break
 
-    # --- 3. RETORNO SEGURO ---
-    # Si no encontró nada, devolverá listas vacías [], lo cual evita el NameError
+        fecha = daily.index[idx]
+        # Asegurar que los valores sean flotantes puros
+        d_high = round(float(daily['High'].iloc[idx]), 2)
+        d_low = round(float(daily['Low'].iloc[idx]), 2)
+
+        # Buscar RESISTENCIAS (Máximos no superados después)
+        if d_high > precio_actual:
+            posteriores = daily.iloc[idx + 1:]
+            if posteriores['High'].max() < d_high:
+                if d_high not in etiquetas:
+                    resistencias.append(d_high)
+                    etiquetas[d_high] = f"Máximo del {fecha.strftime('%d/%m/%y')}"
+
+        # Buscar SOPORTES (Mínimos no superados después)
+        if d_low < precio_actual:
+            posteriores = daily.iloc[idx + 1:]
+            if posteriores['Low'].min() > d_low:
+                if d_low not in etiquetas:
+                    soportes.append(d_low)
+                    etiquetas[d_low] = f"Mínimo del {fecha.strftime('%d/%m/%y')}"
+
+    # 4. Limpieza y ordenamiento (Top 3 de cada uno)
     resis_finales = sorted(list(set(resistencias)))[:3]
+    # Soportes se ordenan de mayor a menor para tener los más cercanos al precio primero
     sops_finales = sorted(list(set(soportes)), reverse=True)[:3]
 
     return sops_finales, resis_finales, etiquetas
