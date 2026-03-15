@@ -88,10 +88,32 @@ else:
 
 
 # --- FUNCIÓN DE NIVELES (Asegúrate de que esté definida o importada) ---
-def get_total_vision_levels(symbol, precio_actual, raw_data_daily):
-    # Lógica que ya tienes para filtrar niveles "vírgenes" en los últimos 180 días
-    # ... (usa el código de tu main.py original aquí) ...
-    return soportes, resistencias, etiquetas
+def get_total_vision_levels(symbol, precio_actual, daily):
+    # --- 1. SIEMPRE INICIALIZAR PRIMERO ---
+    soportes = []
+    resistencias = []
+    etiquetas = {}
+
+    # Validar que daily tenga datos para evitar que los bucles se salten
+    if daily.empty:
+        return soportes, resistencias, etiquetas
+
+    # 2. Tu lógica de búsqueda (Asegúrate de que 'max_hoy' y 'min_hoy' estén definidos)
+    # Ejemplo de estructura de búsqueda:
+    for i in range(1, len(daily)):
+        idx = -(i + 1)
+        # ... (tu lógica de detección de niveles vírgenes) ...
+        # d_high = round(float(daily['High'].iloc[idx]), 2)
+        # if d_high > precio_actual:
+        #     resistencias.append(d_high)
+        #     etiquetas[d_high] = "Máximo histórico"
+
+    # --- 3. RETORNO SEGURO ---
+    # Si no encontró nada, devolverá listas vacías [], lo cual evita el NameError
+    resis_finales = sorted(list(set(resistencias)))[:3]
+    sops_finales = sorted(list(set(soportes)), reverse=True)[:3]
+
+    return sops_finales, resis_finales, etiquetas
 
 
 # --- DENTRO DE LA LÓGICA DE STREAMLIT (después de validar raw_data) ---
