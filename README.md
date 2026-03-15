@@ -12,3 +12,8 @@ su maximo o minimo.
 - tensorflow.keras
 - panda
 - skylearn
+
+## Probabilidad Heuristica a Probabilidad por Volatilidad
+
+Actualmente tenermos 1-(dist/15), ahora compararemos la distancia al objetivo contra
+el movimiento promedio de las ultimas velas.
