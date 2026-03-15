@@ -85,3 +85,70 @@ else:
         st.metric("Precio Actual", f"${precio_actual:.2f}")
     else:
         st.warning("El mercado podría estar cerrado o no hay suficientes velas de 5m.")
+
+
+# --- FUNCIÓN DE NIVELES (Asegúrate de que esté definida o importada) ---
+def get_total_vision_levels(symbol, precio_actual, raw_data_daily):
+    # Lógica que ya tienes para filtrar niveles "vírgenes" en los últimos 180 días
+    # ... (usa el código de tu main.py original aquí) ...
+    return soportes, resistencias, etiquetas
+
+
+# --- DENTRO DE LA LÓGICA DE STREAMLIT (después de validar raw_data) ---
+
+# 1. Obtener Niveles Históricos
+# Descargamos daily por separado para la visión de 6 meses
+daily_data = yf.download(symbol, period="180d", interval="1d", progress=False)
+if isinstance(daily_data.columns, pd.MultiIndex):
+    daily_data.columns = daily_data.columns.get_level_values(0)
+
+soportes, resistencias, etiquetas = get_total_vision_levels(symbol, precio_actual, daily_data)
+
+# 2. Cálculo de Volatilidad (2 sigmas)
+recientes = raw_data['Close'].tail(20)
+volatilidad_2s = recientes.pct_change().std() * precio_actual * 2
+
+# 3. Construcción de Tablas de Objetivos
+st.subheader("🚀 Radar de Objetivos Históricos")
+
+# --- TABLA DE RESISTENCIAS ---
+st.markdown("### 🔼 Resistencias Pendientes (Techos)")
+if resistencias:
+    data_res = []
+    for r in resistencias:
+        dist_pts = abs(r - precio_actual)
+        dist_pct = (dist_pts / precio_actual) * 100
+        factor_v = dist_pts / max(volatilidad_2s, 0.01)
+        # p_up viene de tu modelo dl_model.predict
+        prob = max(p_up / (1 + factor_v), 1.0)
+
+        data_res.append({
+            "Nivel ($)": f"{r:.2f}",
+            "Probabilidad": f"{prob:.1f}%",
+            "Distancia": f"+{dist_pct:.2f}%",
+            "Origen": etiquetas[r]
+        })
+    st.table(pd.DataFrame(data_res))
+else:
+    st.success("Subida Libre: No hay techos históricos cercanos.")
+
+# --- TABLA DE SOPORTES ---
+st.markdown("### 🔽 Soportes Pendientes (Suelos)")
+if soportes:
+    data_sop = []
+    for s in soportes:
+        dist_pts = abs(precio_actual - s)
+        dist_pct = (dist_pts / precio_actual) * 100
+        factor_v = dist_pts / max(volatilidad_2s, 0.01)
+        # p_down viene de tu modelo dl_model.predict
+        prob = max(p_down / (1 + factor_v), 1.0)
+
+        data_sop.append({
+            "Nivel ($)": f"{s:.2f}",
+            "Probabilidad": f"{prob:.1f}%",
+            "Distancia": f"-{dist_pct:.2f}%",
+            "Origen": etiquetas[s]
+        })
+    st.table(pd.DataFrame(data_sop))
+else:
+    st.warning("Caída Libre: No hay suelos detectados en 6 meses.")
